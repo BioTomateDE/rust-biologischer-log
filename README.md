@@ -11,7 +11,7 @@
 ```toml
 ...
 [dependencies]
-biologischer-log = { git = "https://github.com/BioTomateDE/rust-biologischer-log" }
+biologischer-log = { git = "https://github.com/BioTomateDE/rust-biologischer-log.git" }
 log = "0.4.27"   # put whatever version you have
 ```
 
@@ -21,14 +21,18 @@ use biologischer_log::init_logger;
 use log::{info, warn};
 
 fn main() {
-    // Initialize the logger. Call this function in the beginning of your main function.
+    // Initialize the logger. Call this function in the
+    // beginning of your main function.
     let logger = init_logger();
    
-    // Do your program stuff, logging with the `debug`, `info`, `warn`, and `error` functions from the `log` crate.
+    // Do your program stuff, logging with the `debug`, `info`, `warn`,
+    // and `error` functions from the `log` crate.
     info!("Hello world");
     warn!("This is a warning");
 
-    // Shutdown the logger. Call this method right before you exit your program so that the logging thread can finish, allowing all messages to get printed
+    // Shutdown the logger. Call this method right before you exit
+    // your program so that the logging thread can finish,
+    // allowing all messages to get printed
     logger.shutdown();
 }
 ```

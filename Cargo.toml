@@ -1,0 +1,9 @@
+[package]
+name = "biologischer-log"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chrono = "0.4.40"
+log = { version = "0.4", features = ["std"] }
+termcolor = "1.4.1"

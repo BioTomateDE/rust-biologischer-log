@@ -22,9 +22,9 @@ use biologischer_log::init_logger;
 use log::{info, warn};
 
 fn main() {
-    // Initialize the logger. Call this function in the
-    // beginning of your main function.
-    let logger = init_logger();
+    // Initialize the logger with your crate name.
+    // Call this function in the beginning of your main function.
+    let logger = init_logger(env!("CARGO_PKG_NAME"));
    
     // Do your program stuff, logging with the `debug`, `info`, `warn`,
     // and `error` functions from the `log` crate.

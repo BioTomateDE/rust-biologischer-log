@@ -13,6 +13,7 @@ struct LogMessage {
 	timestamp: String,
 }
 
+#[derive(Debug, Clone)]
 pub struct CustomLogger {
 	sender: Mutex<Option<mpsc::Sender<LogMessage>>>,
 	thread_handle: Mutex<Option<thread::JoinHandle<()>>>,

@@ -2,6 +2,7 @@
 - Colored output for different severity levels
 - Automatic tracing of modules and functions
 - Threaded printing to not block the main thread
+- **Muting all other modules** to prevent spam
 
 ## Example output:
 `23:14:52.826 [WARN @ deserialize::sounds::parse_sound] Sound with name "abc_123_a" has audio data length 82642; but was expected to be 82734.`
@@ -36,6 +37,3 @@ fn main() {
     logger.shutdown();
 }
 ```
-
-## License
-Do whatever you want.

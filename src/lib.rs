@@ -13,14 +13,15 @@ struct LogMessage {
 	timestamp: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct CustomLogger {
 	sender: Mutex<Option<mpsc::Sender<LogMessage>>>,
 	thread_handle: Mutex<Option<thread::JoinHandle<()>>>,
+	root_module: String,
 }
 
 impl CustomLogger {
-	fn new() -> Self {
+	fn new(root_module: String) -> Self {
 		let (sender, receiver) = mpsc::channel::<LogMessage>();
 
 		// create separate thread to handle printing so it doesn't block the main thread
@@ -66,12 +67,14 @@ impl CustomLogger {
 		CustomLogger {
             sender: Mutex::new(Some(sender)),
             thread_handle: Mutex::new(Some(thread_handle)),
-        }
+			root_module,
+		}
 	}
 	
 	pub fn shutdown(&self) {
 		// drop sender to close the channel
 		self.sender.lock().expect("Could not lock sender").take();
+
 		// wait for the logging thread to finish
 		if let Some(handle) = self.thread_handle.lock().expect("Could not lock thread handle").take() {
 			handle.join().expect("Logging thread panicked");
@@ -81,15 +84,11 @@ impl CustomLogger {
 
 impl log::Log for CustomLogger {
 	fn enabled(&self, metadata: &Metadata) -> bool {
-		metadata.level() <= Level::Info
+		metadata.level() <= Level::Info &&
+		metadata.target().starts_with(&self.root_module)
 	}
 
 	fn log(&self, record: &Record) {
-		// ignore error spam logs from iced so logging is actually usable
-		if record.target() == "iced" {
-			return;
-		}
-
 		let timestamp = Local::now().format("%H:%M:%S%.3f").to_string();
 		let target = record.target().to_string();
 		let message = record.args().to_string();
@@ -114,7 +113,14 @@ impl log::Log for CustomLogger {
 }
 
 pub fn init_logger() -> Arc<CustomLogger> {
-	let logger = Arc::new(CustomLogger::new());
+	let mut root_module: String = module_path!()
+		.split("::")
+		.next()
+		.expect("Failed to extract crate root")
+		.to_string();
+	root_module.push_str("::");
+
+	let logger = Arc::new(CustomLogger::new(root_module));
 	log::set_boxed_logger(Box::new(logger.clone())).expect("Failed to set logger");
 	log::set_max_level(LevelFilter::Trace);
 	logger

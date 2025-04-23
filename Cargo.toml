@@ -6,4 +6,4 @@ edition = "2024"
 [dependencies]
 chrono = "0.4.40"
 log = { version = "0.4", features = ["std"] }
-termcolor = "1.4.1"
+colored = "3.0.0"

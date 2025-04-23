@@ -1,10 +1,9 @@
 use log::{Record, Level, Metadata, LevelFilter};
 use chrono::Local;
-use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::sync::mpsc;
-use std::io::Write;
+use colored::{Color, Colorize};
 
 struct LogMessage {
     level: Level,
@@ -28,35 +27,25 @@ impl CustomLogger {
         let receiver = Arc::new(Mutex::new(receiver));
 
         let thread_handle = thread::Builder::new().spawn(move || {
-            let stdout = StandardStream::stdout(ColorChoice::Always);
-
             loop {
                 let receiver = receiver.lock().expect("Could not lock receiver");
                 if let Ok(log_message) = receiver.recv() {
-                    let mut handle = stdout.lock();
-                    let mut color_spec = ColorSpec::new();
-
                     // set color based on log level
-                    match log_message.level {
-                        Level::Error => color_spec.set_fg(Some(Color::Red)),
-                        Level::Warn => color_spec.set_fg(Some(Color::Yellow)),
-                        Level::Info => color_spec.set_fg(Some(Color::Green)),
-                        Level::Debug => color_spec.set_fg(Some(Color::Cyan)),
-                        Level::Trace => color_spec.set_fg(Some(Color::White)),
+                    let color: Color = match log_message.level {
+                        Level::Error => Color::Red,
+                        Level::Warn => Color::Yellow,
+                        Level::Info => Color::Green,
+                        Level::Debug => Color::Cyan,
+                        Level::Trace => Color::White,
                     };
 
-                    handle.set_color(&color_spec).expect("Failed to set color");
-
-                    let message = format!(
-                        "{} [{} @ {}] {}\n",
+                    println!(
+                        "{} [{} @ {}] {}",
                         log_message.timestamp,
-                        log_message.level,
+                        log_message.level.to_string().color(color),
                         log_message.target,
-                        log_message.message
+                        log_message.message.color(color),
                     );
-
-                    handle.write_all(message.as_bytes()).expect("Failed to write log message");
-                    handle.reset().expect("Failed to reset color");
                 } else {
                     // channel disconnected, exit thread
                     break

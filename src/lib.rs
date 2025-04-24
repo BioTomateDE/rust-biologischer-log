@@ -72,12 +72,14 @@ impl CustomLogger {
         }
     }
 
-    pub fn allow_module(&mut self, module_name: &str) {
+    pub fn allow_module(&mut self, module_name: &str) -> &mut Self {
         self.allowed_modules.insert(module_name.to_string());
+        self
     }
     
-    pub fn disallow_module(&mut self, module_name: &str) {
+    pub fn disallow_module(&mut self, module_name: &str) -> &mut Self {
         self.allowed_modules.remove(&module_name.to_string());
+        self
     }
 
     fn check_target_allowed(&self, target: &str) -> bool {
@@ -150,7 +152,8 @@ impl log::Log for CustomLogger {
 
 /// # Example
 /// ```
-/// let logger = biologischer_log::init_logger(env!("CARGO_PKG_NAME"));
+/// let logger = biologischer_log::init_logger(env!("CARGO_PKG_NAME"))
+///     .allow_module("rocket");
 /// ```
 pub fn init_logger(root_module: &'static str) -> Arc<CustomLogger> {
     let logger = Arc::new(CustomLogger::new(root_module));

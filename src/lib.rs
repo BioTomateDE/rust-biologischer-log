@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+use std::str::Chars;
 use log::{Record, Level, Metadata, LevelFilter};
 use chrono::Local;
 use std::sync::{Arc, Mutex};
@@ -16,7 +18,7 @@ struct LogMessage {
 pub struct CustomLogger {
     sender: Mutex<Option<mpsc::Sender<LogMessage>>>,
     thread_handle: Mutex<Option<thread::JoinHandle<()>>>,
-    root_module: &'static str,
+    allowed_modules: HashSet<String>,
 }
 
 impl CustomLogger {
@@ -56,7 +58,7 @@ impl CustomLogger {
         CustomLogger {
             sender: Mutex::new(Some(sender)),
             thread_handle: Mutex::new(Some(thread_handle)),
-            root_module,
+            allowed_modules: HashSet::from([root_module.to_string()]),
         }
     }
 
@@ -68,6 +70,42 @@ impl CustomLogger {
         if let Some(handle) = self.thread_handle.lock().expect("Could not lock thread handle").take() {
             handle.join().expect("Logging thread panicked");
         }
+    }
+
+    pub fn allow_module(&mut self, module_name: &str) {
+        self.allowed_modules.insert(module_name.to_string());
+    }
+    
+    pub fn disallow_module(&mut self, module_name: &str) {
+        self.allowed_modules.remove(&module_name.to_string());
+    }
+
+    fn check_target_allowed(&self, target: &str) -> bool {
+        for module_name in &self.allowed_modules {
+            // check if exactly equal
+            if module_name == target { return true }
+            
+            // if target is shorter, it can't start with the module name, so not allowed
+            if target.len() < module_name.len() { continue }
+            
+            // check if starts with "{module_name}::"
+            let mut starts_with: bool = true;
+            let mut module_name_chars: Chars = module_name.chars();
+            let mut target_name_chars: Chars = target.chars();
+            // check the "{module_name}"
+            for _ in 0..module_name.len() {
+                if !(module_name_chars.next() == target_name_chars.next()) {
+                    starts_with = false;
+                    break
+                }
+            }
+            // check the "::"
+            if target_name_chars.next() != Some(':') || target_name_chars.next() != Some(':') {
+                starts_with = false;
+            }
+            if starts_with { return true }
+        }
+        false
     }
 }
 
@@ -81,8 +119,8 @@ impl log::Log for CustomLogger {
         let target = record.target().to_string();
         let message = record.args().to_string();
 
-        // technically you would have to check if it equals root_module or starts with "{root_module}::"
-        if !record.target().starts_with(&self.root_module) { return }
+        // check if module is allowed; if not, don't print
+        if !self.check_target_allowed(record.target()) { return }
 
         // Prepare the log message
         let log_message = LogMessage {
@@ -103,6 +141,17 @@ impl log::Log for CustomLogger {
     fn flush(&self) {}
 }
 
+/// Initialize the logger. This function should be called once, in the beginning of your main function.
+/// This will initialize the logger to ignore all logs that aren't coming from your program.
+/// You can later allow certain modules using `logger.allow_module(module_name)`.
+///
+/// # Arguments
+/// * `root_module`: the name of your program's cargo crate. Should be set to `env!("CARGO_PKG_NAME")`.
+
+/// # Example
+/// ```
+/// let logger = biologischer_log::init_logger(env!("CARGO_PKG_NAME"));
+/// ```
 pub fn init_logger(root_module: &'static str) -> Arc<CustomLogger> {
     let logger = Arc::new(CustomLogger::new(root_module));
     log::set_boxed_logger(Box::new(logger.clone())).expect("Failed to set logger");

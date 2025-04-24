@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::str::Chars;
 use log::{Record, Level, Metadata, LevelFilter};
 use chrono::Local;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 use std::sync::mpsc;
 use colored::{Color, Colorize};
@@ -18,7 +18,7 @@ struct LogMessage {
 pub struct CustomLogger {
     sender: Mutex<Option<mpsc::Sender<LogMessage>>>,
     thread_handle: Mutex<Option<thread::JoinHandle<()>>>,
-    allowed_modules: HashSet<String>,
+    allowed_modules: RwLock<HashSet<String>>,
 }
 
 impl CustomLogger {
@@ -58,7 +58,7 @@ impl CustomLogger {
         CustomLogger {
             sender: Mutex::new(Some(sender)),
             thread_handle: Mutex::new(Some(thread_handle)),
-            allowed_modules: HashSet::from([root_module.to_string()]),
+            allowed_modules: RwLock::new(HashSet::from([root_module.to_string()])),
         }
     }
 
@@ -72,24 +72,31 @@ impl CustomLogger {
         }
     }
 
-    pub fn allow_module(&mut self, module_name: &str) -> &mut Self {
-        self.allowed_modules.insert(module_name.to_string());
+    pub fn allow_module(&self, module_name: &str) -> &Self {
+        let mut allowed_modules = self.allowed_modules.write()
+            .expect("Could not acquire allowed modules list lock");
+        allowed_modules.insert(module_name.to_string());
         self
     }
-    
-    pub fn disallow_module(&mut self, module_name: &str) -> &mut Self {
-        self.allowed_modules.remove(&module_name.to_string());
+
+    pub fn disallow_module(&self, module_name: &str) -> &Self {
+        let mut allowed_modules = self.allowed_modules.write()
+            .expect("Could not acquire allowed modules list lock");
+        allowed_modules.remove(&module_name.to_string());
         self
     }
 
     fn check_target_allowed(&self, target: &str) -> bool {
-        for module_name in &self.allowed_modules {
+        let allowed_modules = self.allowed_modules.read()
+            .expect("Could not acquire allowed modules list lock");
+        
+        for module_name in allowed_modules.iter() {
             // check if exactly equal
             if module_name == target { return true }
-            
+
             // if target is shorter, it can't start with the module name, so not allowed
             if target.len() < module_name.len() { continue }
-            
+
             // check if starts with "{module_name}::"
             let mut starts_with: bool = true;
             let mut module_name_chars: Chars = module_name.chars();

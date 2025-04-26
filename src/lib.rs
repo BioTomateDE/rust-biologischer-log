@@ -159,8 +159,8 @@ impl log::Log for CustomLogger {
 
 /// # Example
 /// ```
-/// let logger = biologischer_log::init_logger(env!("CARGO_PKG_NAME"))
-///     .allow_module("rocket");
+/// let logger = biologischer_log::init_logger(env!("CARGO_CRATE_NAME"));
+/// logger.allow_module("rocket");
 /// ```
 pub fn init_logger(root_module: &'static str) -> Arc<CustomLogger> {
     let logger = Arc::new(CustomLogger::new(root_module));

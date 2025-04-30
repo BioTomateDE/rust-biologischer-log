@@ -10,6 +10,7 @@ use colored::{Color, Colorize};
 struct LogMessage {
     level: Level,
     target: String,
+    line: Option<u32>,
     message: String,
     timestamp: String,
 }
@@ -41,11 +42,16 @@ impl CustomLogger {
                         Level::Trace => Color::White,
                     };
 
+                    let target: String = match log_message.line {
+                        Some(line_number) => format!("{}@{}", log_message.target, line_number),
+                        None => log_message.target,
+                    };
+
                     println!(
-                        "{} [{} @ {}] {}",
+                        "{} {} [{}] {}",
                         log_message.timestamp,
                         log_message.level.to_string().color(color),
-                        log_message.target,
+                        target,
                         log_message.message.color(color),
                     );
                 } else {
@@ -124,9 +130,10 @@ impl log::Log for CustomLogger {
     }
 
     fn log(&self, record: &Record) {
-        let timestamp = Local::now().format("%H:%M:%S%.3f").to_string();
-        let target = record.target().to_string();
-        let message = record.args().to_string();
+        let timestamp: String = Local::now().format("%H:%M:%S%.3f").to_string();
+        let target: String = record.target().to_string();
+        let line: Option<u32> = record.line();
+        let message: String = record.args().to_string();
 
         // check if module is allowed; if not, don't print
         if !self.check_target_allowed(record.target()) { return }
@@ -135,6 +142,7 @@ impl log::Log for CustomLogger {
         let log_message = LogMessage {
             level: record.level(),
             target,
+            line,
             message,
             timestamp,
         };

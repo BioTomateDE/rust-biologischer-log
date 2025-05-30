@@ -6,7 +6,7 @@
   - Modules can still be whitelisted to print logs
 
 ## Example output:
-`23:14:52.826 WARN [deserialize::sounds::parse_sound@214] Sound with name "abc_123_a" has audio data length 82642; but was expected to be 82734.`
+`23:14:52.826 WARN @ deserialize::sounds::parse_sound:214 | Sound with name "abc_123_a" has audio data length 82642; but was expected to be 82734.`
 
 ## Example usage:
 - `Cargo.toml`:

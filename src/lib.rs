@@ -91,14 +91,14 @@ impl log::Log for AsyncLogger {
         };
 
         let target: &String = match (record.module_path(), record.line()) {
-            (Some(module_path), Some(line_number)) => &format!("[{module_path}@{line_number}] "),
-            (Some(module_path), None) => &format!("[{module_path}] "),
-            (None, Some(line_number)) => &format!("[@{line_number}] "),
+            (Some(module_path), Some(line_number)) => &format!("@ {module_path}:{line_number} "),
+            (Some(module_path), None) => &format!("@ {module_path} "),
+            (None, Some(line_number)) => &format!("@ {line_number} "),
             (None, None) => &"".to_string(),
         };
 
         println!(
-            "{} {} {}{}",
+            "{} {} {}| {}",
             chrono::Local::now().format("%H:%M:%S%.3f").to_string(),
             record.level().to_string().color(color),
             target,

@@ -1,13 +1,11 @@
 use std::thread;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::collections::HashSet;
-use std::io::Write;
 use log::Level;
 use colored::{Color, Colorize};
 
 struct LogWorker {
     handle: Option<thread::JoinHandle<()>>,
-    messages: Arc<Mutex<Vec<String>>>,
 }
 
 pub struct AsyncLogger {
@@ -20,7 +18,6 @@ impl AsyncLogger {
     pub fn new() -> Self {
         let messages: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let worker: Arc<Mutex<LogWorker>> = Arc::new(Mutex::new(LogWorker {
-            messages: messages.clone(),
             handle: None,
         }));
         
@@ -45,44 +42,29 @@ impl AsyncLogger {
     }
 
     fn install_hooks(&self) {
-        // Setup panic hook
-        let worker_clone = self.worker.clone();
-        let worker = worker_clone.lock().expect("Could not lock worker");
-        let panic_messages = worker.messages.clone();
-        std::panic::set_hook(Box::new(move |panic_info| {
-            // Format panic message
-            let msg = format!(
-                "PANIC at {}:{}: {}",
-                panic_info.location().map(|l| l.file()).unwrap_or("?"),
-                panic_info.location().map(|l| l.line()).unwrap_or(0),
-                panic_info.payload().downcast_ref::<&str>().unwrap_or(&"<unknown>")
-            );
+        std::panic::set_hook(Box::new(|info| {
+            // 1. Extract panic message (works for all payload types)
+            let msg = match info.payload().downcast_ref::<&str>() {
+                Some(s) => s.to_string(),
+                None => match info.payload().downcast_ref::<String>() {
+                    Some(s) => s.clone(),
+                    None => "<unknown error>".to_string(),
+                },
+            };
 
-            // 1. Immediate sync write to stderr
-            eprintln!("{}", msg);
+            // 2. Format location (works in release mode)
+            let location = info.location().map(|loc| {
+                format!("{}:{}", loc.file(), loc.line())
+            }).unwrap_or_else(|| "<unknown location>".to_string());
 
-            // 2. Add to log queue if possible
-            if let Ok(mut logs) = panic_messages.lock() {
-                logs.push(msg);
-            }
+            // 3. Print exactly ONCE with clear formatting
+            eprintln!("\n=== PANIC ===");
+            eprintln!("Thread panicked at '{}'", msg);
+            eprintln!("Location: {}\n", location);
 
-            std::process::exit(1);
+            // 4. Immediate hard exit (no duplicate handlers)
+            std::process::abort(); // Use abort() instead of exit() to prevent unwind
         }));
-
-        // Normal Exit Hook
-        ctrlc::set_handler({
-            let logger = self.worker.clone();
-            move || {
-                // Force flush remaining messages
-                if let Ok(mut worker) = logger.lock() {
-                    let messages_clone: Arc<Mutex<Vec<String>>> = worker.messages.clone();
-                    let messages: MutexGuard<Vec<String>> = messages_clone.lock().expect("Could not lock messages");
-                    let _ = std::io::stderr().write_all(messages.join("\n").as_bytes());
-                    worker.handle.take();
-                }
-                std::process::exit(0);
-            }
-        }).unwrap();
     }
 
 

@@ -50,18 +50,29 @@ impl AsyncLogger {
         let panic_sender = Arc::new(Mutex::new(panic_sender));
 
         // 1. Panic Hook
-        std::panic::set_hook({
-            let panic_sender = panic_sender.clone();
-            Box::new(move |panic_info| {
-                let msg = format!("PANIC: {}", panic_info);
-                // Sync write to stderr FIRST
-                let _ = std::io::stderr().write_all(msg.as_bytes());
-                // Then notify logger thread
-                if let Ok(sender) = panic_sender.lock() {
-                    let _ = sender.send(msg);
-                }
-            })
-        });
+        std::panic::set_hook(Box::new(move |panic_info| {
+            // 1. Disable default panic printing
+            let payload = panic_info.payload();
+            let location = panic_info.location().unwrap();
+
+            // 2. Format the message yourself
+            let msg = format!(
+                "PANIC at {}:{}: {}",
+                location.file(),
+                location.line(),
+                payload.downcast_ref::<&str>().unwrap_or(&"<unknown>")
+            );
+
+            // 3. Sync write (only once)
+            let _ = std::io::stderr().write_all(msg.as_bytes());
+
+            // 4. Send to logger thread if needed
+            if let Ok(sender) = panic_sender.lock() {
+                let _ = sender.send(msg);
+            }
+
+            std::process::exit(101);
+        }));
 
         // 2. Normal Exit Hook
         ctrlc::set_handler({

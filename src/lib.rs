@@ -37,20 +37,28 @@ impl AsyncLogger {
             worker,
             whitelist: HashSet::new(),
         };
-        logger.install_hooks();
+        logger.install_panic_hook();
         logger
     }
 
-    fn install_hooks(&self) {
+    fn install_panic_hook(&self) {
         std::panic::set_hook(Box::new(|info| {
-            // 1. Format message (inlined for maximum reliability)
-            let msg = info.payload().downcast_ref::<&str>()
-                .map(|s| s.to_string())
-                .or_else(|| info.payload().downcast_ref::<String>().map(|s| s.clone()))
-                .unwrap_or_else(|| "<unknown>".to_string());
+            // Handle both &str and String payload types
+            let msg = if let Some(s) = info.payload().downcast_ref::<&str>() {
+                *s
+            } else if let Some(s) = info.payload().downcast_ref::<String>() {
+                s.as_str()
+            } else {
+                "<panic>"
+            };
 
-            // 2. Direct raw write (no stdio locks)
-            let output = format!("\n=== PANIC ===\n{}\nLocation: {:?}\n", msg, info.location());
+            // Format location compactly
+            let loc = info.location().map(|l| {
+                format!("{}:{}:{}", l.file(), l.line(), l.column())
+            }).unwrap_or_else(|| "<unknown>".to_string());
+
+            // Direct write to stderr
+            let output = format!("[PANIC] {loc}: {msg}\n");
             unsafe {
                 libc::write(
                     libc::STDERR_FILENO,
@@ -58,9 +66,6 @@ impl AsyncLogger {
                     output.len()
                 );
             }
-
-            // 3. Immediate process death
-            unsafe { libc::_exit(1); } // Bypass all runtime cleanup
         }));
     }
 

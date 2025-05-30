@@ -45,36 +45,31 @@ impl AsyncLogger {
     }
 
     fn install_hooks(&self) {
-        // Get a sync channel for panic messages
-        let (panic_sender, panic_receiver) = std::sync::mpsc::sync_channel(1);
-        let panic_sender = Arc::new(Mutex::new(panic_sender));
-
-        // 1. Panic Hook
+        // Setup panic hook
+        let worker_clone = self.worker.clone();
+        let worker = worker_clone.lock().expect("Could not lock worker");
+        let panic_messages = worker.messages.clone();
         std::panic::set_hook(Box::new(move |panic_info| {
-            // 1. Disable default panic printing
-            let payload = panic_info.payload();
-            let location = panic_info.location().unwrap();
-
-            // 2. Format the message yourself
+            // Format panic message
             let msg = format!(
                 "PANIC at {}:{}: {}",
-                location.file(),
-                location.line(),
-                payload.downcast_ref::<&str>().unwrap_or(&"<unknown>")
+                panic_info.location().map(|l| l.file()).unwrap_or("?"),
+                panic_info.location().map(|l| l.line()).unwrap_or(0),
+                panic_info.payload().downcast_ref::<&str>().unwrap_or(&"<unknown>")
             );
 
-            // 3. Sync write (only once)
-            let _ = std::io::stderr().write_all(msg.as_bytes());
+            // 1. Immediate sync write to stderr
+            eprintln!("{}", msg);
 
-            // 4. Send to logger thread if needed
-            if let Ok(sender) = panic_sender.lock() {
-                let _ = sender.send(msg);
+            // 2. Add to log queue if possible
+            if let Ok(mut logs) = panic_messages.lock() {
+                logs.push(msg);
             }
 
-            std::process::exit(101);
+            std::process::exit(1);
         }));
 
-        // 2. Normal Exit Hook
+        // Normal Exit Hook
         ctrlc::set_handler({
             let logger = self.worker.clone();
             move || {
@@ -88,19 +83,6 @@ impl AsyncLogger {
                 std::process::exit(0);
             }
         }).unwrap();
-
-        // 3. Log thread watches for panics
-        let worker: Arc<Mutex<LogWorker>> = self.worker.clone();
-        thread::spawn(move || {
-            // This will block until panic occurs
-            if let Ok(panic_msg) = panic_receiver.recv() {
-                if let Ok(mut worker) = worker.lock() {
-                    // Add panic to regular log queue
-                    worker.messages.lock().expect("Could not lock messages").push(panic_msg);
-                    worker.handle.take();
-                }
-            }
-        });
     }
 
 

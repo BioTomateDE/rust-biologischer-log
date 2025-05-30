@@ -1,62 +1,65 @@
-use std::{
-    sync::mpsc::{self, SyncSender, Receiver},
-    thread,
-    collections::HashSet,
-};
-use colored::{Color, Colorize};
+use std::thread;
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::collections::HashSet;
 use log::Level;
+use colored::{Color, Colorize};
+
+struct LogWorker {
+    handle: Option<thread::JoinHandle<()>>,
+}
 
 pub struct AsyncLogger {
-    sender: Option<SyncSender<LogMessage>>,    // wrapped in Option for clean shutdown
+    worker: Arc<Mutex<LogWorker>>,
     whitelist: HashSet<String>,
-    thread_handle: Option<thread::JoinHandle<()>>,
 }
 
-#[derive(Debug)]
-struct LogMessage {
-    message: String,
-    level: Level,
-    timestamp: String,
-    module: String,
-    line: Option<u32>,
-}
 
 impl AsyncLogger {
     pub fn new() -> Self {
-        // Explicitly specify the channel type
-        let (sender, receiver): (SyncSender<LogMessage>, Receiver<LogMessage>) = mpsc::sync_channel(100);
-
+        let messages: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let worker: Arc<Mutex<LogWorker>> = Arc::new(Mutex::new(LogWorker {
+            handle: None,
+        }));
+        
         let thread_handle = thread::spawn(move || {
-            for msg in receiver {
-                let color: Color = match msg.level {
-                    Level::Error => Color::Red,
-                    Level::Warn => Color::Yellow,
-                    Level::Info => Color::Green,
-                    Level::Debug => Color::Cyan,
-                    Level::Trace => Color::White,
-                };
-
-                let target: String = match msg.line {
-                    Some(line_number) => format!("{}@{}", msg.module, line_number),
-                    None => msg.module,
-                };
-
-                println!(
-                    "{} {} [{}] {}",
-                    msg.timestamp,
-                    msg.level.to_string().color(color),
-                    target,
-                    msg.message.color(color),
-                );
+            loop {
+                let mut messages: MutexGuard<Vec<String>> = messages.lock().expect("Could not lock messages");
+                for message in messages.drain(..) {
+                    println!("{}", message);
+                }
             }
         });
 
-        AsyncLogger {
-            sender: Some(sender),
-            whitelist: HashSet::new(),      // temporarily empty (will be populated in `init()`)
-            thread_handle: Some(thread_handle),
-        }
+        worker.lock().expect("Could not lock log worker").handle = Some(thread_handle);
+
+        // Hook into process exit
+        let logger = AsyncLogger {
+            worker,
+            whitelist: HashSet::new(),
+        };
+        logger.install_hooks();
+        logger
     }
+
+    fn install_hooks(&self) {
+        // Hook panics
+        std::panic::set_hook({
+            let logger = self.worker.clone();
+            Box::new(move |_| {
+                logger.lock().expect("Could not lock logger").handle.take();
+            })
+        });
+
+        // Hook process exit
+        ctrlc::set_handler({
+            let logger = self.worker.clone();
+            move || {
+                logger.lock().expect("Could not lock logger").handle.take();
+                std::process::exit(0);
+            }
+        }).expect("Could not set ctrlc handler");
+    }
+
 
     pub fn whitelist_module(&mut self, module: &str) {
         self.whitelist.insert(module.to_string());
@@ -79,15 +82,28 @@ impl log::Log for AsyncLogger {
             return;
         }
 
-        if let Some(sender) = &self.sender {
-            let _ = sender.send(LogMessage {
-                module: record.module_path().unwrap_or("unknown").to_string(),
-                level: record.level(),
-                timestamp: chrono::Local::now().format("%H:%M:%S%.3f").to_string(),
-                message: record.args().to_string(),
-                line: record.line(),
-            });
-        }
+        let color: Color = match record.level() {
+            Level::Error => Color::Red,
+            Level::Warn => Color::Yellow,
+            Level::Info => Color::Green,
+            Level::Debug => Color::Cyan,
+            Level::Trace => Color::White,
+        };
+
+        let target: &String = match (record.module_path(), record.line()) {
+            (Some(module_path), Some(line_number)) => &format!("[{module_path}@{line_number}] "),
+            (Some(module_path), None) => &format!("[{module_path}] "),
+            (None, Some(line_number)) => &format!("[@{line_number}] "),
+            (None, None) => &"".to_string(),
+        };
+
+        println!(
+            "{} {} {}{}",
+            chrono::Local::now().format("%H:%M:%S%.3f").to_string(),
+            record.level().to_string().color(color),
+            target,
+            record.args().to_string().color(color),
+        );
     }
 
     fn flush(&self) {}
@@ -95,13 +111,7 @@ impl log::Log for AsyncLogger {
 
 impl Drop for AsyncLogger {
     fn drop(&mut self) {
-        // close channel by taking the sender
-        self.sender.take();
-
-        // wait for thread to finish
-        if let Some(handle) = self.thread_handle.take() {
-            let _ = handle.join();
-        }
+        self.worker.lock().expect("Could not lock worker").handle.take();
     }
 }
 
@@ -115,3 +125,4 @@ pub fn init(crate_name: &str) {
     log::set_boxed_logger(Box::new(logger)).expect("Failed to set boxed logger");
     log::set_max_level(log::LevelFilter::Info);
 }
+

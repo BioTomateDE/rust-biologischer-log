@@ -1,11 +1,13 @@
 use std::thread;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::collections::HashSet;
+use std::io::Write;
 use log::Level;
 use colored::{Color, Colorize};
 
 struct LogWorker {
     handle: Option<thread::JoinHandle<()>>,
+    messages: Arc<Mutex<Vec<String>>>,
 }
 
 pub struct AsyncLogger {
@@ -18,6 +20,7 @@ impl AsyncLogger {
     pub fn new() -> Self {
         let messages: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let worker: Arc<Mutex<LogWorker>> = Arc::new(Mutex::new(LogWorker {
+            messages: messages.clone(),
             handle: None,
         }));
         
@@ -42,22 +45,51 @@ impl AsyncLogger {
     }
 
     fn install_hooks(&self) {
-        // Hook panics
+        // Get a sync channel for panic messages
+        let (panic_sender, panic_receiver) = std::sync::mpsc::sync_channel(1);
+        let panic_sender = Arc::new(Mutex::new(panic_sender));
+
+        // 1. Panic Hook
         std::panic::set_hook({
-            let logger = self.worker.clone();
-            Box::new(move |_| {
-                logger.lock().expect("Could not lock logger").handle.take();
+            let panic_sender = panic_sender.clone();
+            Box::new(move |panic_info| {
+                let msg = format!("PANIC: {}", panic_info);
+                // Sync write to stderr FIRST
+                let _ = std::io::stderr().write_all(msg.as_bytes());
+                // Then notify logger thread
+                if let Ok(sender) = panic_sender.lock() {
+                    let _ = sender.send(msg);
+                }
             })
         });
 
-        // Hook process exit
+        // 2. Normal Exit Hook
         ctrlc::set_handler({
             let logger = self.worker.clone();
             move || {
-                logger.lock().expect("Could not lock logger").handle.take();
+                // Force flush remaining messages
+                if let Ok(mut worker) = logger.lock() {
+                    let messages_clone: Arc<Mutex<Vec<String>>> = worker.messages.clone();
+                    let messages: MutexGuard<Vec<String>> = messages_clone.lock().expect("Could not lock messages");
+                    let _ = std::io::stderr().write_all(messages.join("\n").as_bytes());
+                    worker.handle.take();
+                }
                 std::process::exit(0);
             }
-        }).expect("Could not set ctrlc handler");
+        }).unwrap();
+
+        // 3. Log thread watches for panics
+        let worker: Arc<Mutex<LogWorker>> = self.worker.clone();
+        thread::spawn(move || {
+            // This will block until panic occurs
+            if let Ok(panic_msg) = panic_receiver.recv() {
+                if let Ok(mut worker) = worker.lock() {
+                    // Add panic to regular log queue
+                    worker.messages.lock().expect("Could not lock messages").push(panic_msg);
+                    worker.handle.take();
+                }
+            }
+        });
     }
 
 

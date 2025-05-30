@@ -20,7 +20,7 @@ impl AsyncLogger {
         let worker: Arc<Mutex<LogWorker>> = Arc::new(Mutex::new(LogWorker {
             handle: None,
         }));
-        
+
         let thread_handle = thread::spawn(move || {
             loop {
                 let mut messages: MutexGuard<Vec<String>> = messages.lock().expect("Could not lock messages");
@@ -43,27 +43,24 @@ impl AsyncLogger {
 
     fn install_hooks(&self) {
         std::panic::set_hook(Box::new(|info| {
-            // 1. Extract panic message (works for all payload types)
-            let msg = match info.payload().downcast_ref::<&str>() {
-                Some(s) => s.to_string(),
-                None => match info.payload().downcast_ref::<String>() {
-                    Some(s) => s.clone(),
-                    None => "<unknown error>".to_string(),
-                },
-            };
+            // 1. Format message (inlined for maximum reliability)
+            let msg = info.payload().downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| info.payload().downcast_ref::<String>().map(|s| s.clone()))
+                .unwrap_or_else(|| "<unknown>".to_string());
 
-            // 2. Format location (works in release mode)
-            let location = info.location().map(|loc| {
-                format!("{}:{}", loc.file(), loc.line())
-            }).unwrap_or_else(|| "<unknown location>".to_string());
+            // 2. Direct raw write (no stdio locks)
+            let output = format!("\n=== PANIC ===\n{}\nLocation: {:?}\n", msg, info.location());
+            unsafe {
+                libc::write(
+                    libc::STDERR_FILENO,
+                    output.as_ptr() as *const libc::c_void,
+                    output.len()
+                );
+            }
 
-            // 3. Print exactly ONCE with clear formatting
-            eprintln!("\n=== PANIC ===");
-            eprintln!("Thread panicked at '{}'", msg);
-            eprintln!("Location: {}\n", location);
-
-            // 4. Immediate hard exit (no duplicate handlers)
-            std::process::abort(); // Use abort() instead of exit() to prevent unwind
+            // 3. Immediate process death
+            unsafe { libc::_exit(1); } // Bypass all runtime cleanup
         }));
     }
 

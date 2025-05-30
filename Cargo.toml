@@ -1,9 +1,10 @@
 [package]
 name = "biologischer-log"
-version = "3.5.0"
+version = "3.6.0"
 edition = "2024"
 
 [dependencies]
 chrono = "0.4.40"
 log = { version = "0.4", features = ["std"] }
 colored = "3.0.0"
+libc = "1.0.0-alpha.1"

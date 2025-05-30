@@ -24,7 +24,7 @@ use log::{info, warn};
 fn main() {
     // Initialize the logger.
     // Call this function in the beginning of your main function.
-    let logger = biologischer_log::init();
+    let logger = biologischer_log::init(env!("CARGO_CRATE_NAME"));
    
     // Do your program stuff, logging with the `debug`, `info`, `warn`,
     // and `error` functions from the `log` crate.

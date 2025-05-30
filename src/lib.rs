@@ -53,7 +53,7 @@ impl AsyncLogger {
 
         AsyncLogger {
             sender: Some(sender),
-            whitelist: HashSet::new(),
+            whitelist: HashSet::new(),      // temporarily empty (will be populated in `init()`)
             thread_handle: Some(thread_handle),
         }
     }
@@ -106,10 +106,12 @@ impl Drop for AsyncLogger {
 }
 
 
-/// Initialize the logger. This function should be called once at the start of your `main` function.
-pub fn init() {
-    let logger = Box::new(AsyncLogger::new());
+/// Initialize the logger. This function should be called once at the start of your main function.
+/// 
+/// Example use: `biologischer_log::init(env!("CARGO_CRATE_NAME"))`
+pub fn init(crate_name: &str) {
+    let mut logger = AsyncLogger::new();
+    logger.whitelist_module(&crate_name);   // Auto-whitelist the crate
+    log::set_boxed_logger(Box::new(logger)).expect("Failed to set boxed logger");
     log::set_max_level(log::LevelFilter::Info);
-    log::set_boxed_logger(logger).expect("Failed to set logger");
 }
-

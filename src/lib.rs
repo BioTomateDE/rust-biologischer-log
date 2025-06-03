@@ -1,7 +1,7 @@
 use std::thread;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::collections::HashSet;
-use log::Level;
+use log::{Level, LevelFilter};
 use colored::{Color, Colorize};
 
 struct LogWorker {
@@ -129,9 +129,24 @@ impl Drop for AsyncLogger {
 /// 
 /// Example use: `biologischer_log::init(env!("CARGO_CRATE_NAME"))`
 pub fn init(crate_name: &str) {
+    let level_filter: String = std::env::var("BIO_LOG").unwrap_or_default().to_lowercase();
+    let level_filter: LevelFilter = match level_filter.as_str() {
+        "trace" => LevelFilter::Trace,
+        "debug" => LevelFilter::Debug,
+        "info"  => LevelFilter::Info,
+        "warn"  => LevelFilter::Warn,
+        "error" => LevelFilter::Error,
+        "off"   => LevelFilter::Off,
+        _ => if cfg!(debug_assertions) {
+            LevelFilter::Trace
+        } else {
+            LevelFilter::Info
+        }
+    };
+    
     let mut logger = AsyncLogger::new();
     logger.whitelist_module(&crate_name);   // Auto-whitelist the crate
     log::set_boxed_logger(Box::new(logger)).expect("Failed to set boxed logger");
-    log::set_max_level(log::LevelFilter::Info);
+    log::set_max_level(level_filter);
 }
 

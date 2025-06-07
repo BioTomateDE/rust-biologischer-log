@@ -65,9 +65,9 @@ impl AsyncLogger {
             
             // Direct write to stderr
             let line1 = "======== Rust panicked! ========".red();
-            let line2 = format!("> Thread: {thread_name}").bright_red();
-            let line3 = format!("> Location: {loc}").bright_red();
-            let line4 = format!("> Message: {msg}").bright_red();
+            let line2 = format!("> Thread: {}", thread_name.bright_yellow()).bright_red();
+            let line3 = format!("> Location: {}", loc.bright_yellow()).bright_red();
+            let line4 = format!("> Message: {}", msg.bright_yellow()).bright_red();
             let output = format!("{line1}\n{line2}\n{line3}\n{line4}\n");
             unsafe {
                 libc::write(

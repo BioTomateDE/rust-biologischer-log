@@ -1,6 +1,7 @@
 use std::thread;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::collections::HashSet;
+use std::thread::Thread;
 use log::{Level, LevelFilter};
 use colored::{Color, Colorize};
 
@@ -43,7 +44,7 @@ impl AsyncLogger {
 
     fn install_panic_hook(&self) {
         std::panic::set_hook(Box::new(|info| {
-            // Handle both &str and String payload types
+            // handle both &str and String payload types
             let msg = if let Some(s) = info.payload().downcast_ref::<&str>() {
                 *s
             } else if let Some(s) = info.payload().downcast_ref::<String>() {
@@ -52,18 +53,27 @@ impl AsyncLogger {
                 "<panic>"
             };
 
-            // Format location compactly
             let loc = info.location().map(|l| {
                 format!("{}:{}:{}", l.file(), l.line(), l.column())
             }).unwrap_or_else(|| "<unknown>".to_string());
-
+            
+            let thread: Thread = std::thread::current();
+            let thread_name: String = match thread.name() {
+                Some(name) => name.to_string(),
+                None => format!("{:?}", thread.id()),
+            };
+            
             // Direct write to stderr
-            let output = format!("[PANIC] {loc}: {msg}\n");
+            let line1 = "======== Rust panicked! ========".red();
+            let line2 = format!("> Thread: {thread_name}").bright_red();
+            let line3 = format!("> Location: {loc}").bright_red();
+            let line4 = format!("> Message: {msg}").bright_red();
+            let output = format!("{line1}\n{line2}\n{line3}\n{line4}");
             unsafe {
                 libc::write(
                     libc::STDERR_FILENO,
                     output.as_ptr() as *const libc::c_void,
-                    output.len()
+                    output.len(),
                 );
             }
         }));

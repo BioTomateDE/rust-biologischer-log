@@ -10,13 +10,13 @@ struct LogWorker {
     handle: Option<thread::JoinHandle<()>>,
 }
 
-pub struct AsyncLogger {
+pub struct BioLogger {
     worker: Arc<Mutex<LogWorker>>,
     whitelist: HashSet<String>,
 }
 
 
-impl AsyncLogger {
+impl BioLogger {
     pub fn new() -> Self {
         let messages: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let worker: Arc<Mutex<LogWorker>> = Arc::new(Mutex::new(LogWorker {
@@ -35,7 +35,7 @@ impl AsyncLogger {
         worker.lock().expect("Could not lock log worker").handle = Some(thread_handle);
 
         // Hook into process exit
-        let logger = AsyncLogger {
+        let logger = BioLogger {
             worker,
             whitelist: HashSet::new(),
         };
@@ -83,7 +83,7 @@ impl AsyncLogger {
     }
 }
 
-impl log::Log for AsyncLogger {
+impl log::Log for BioLogger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
         let target: &str = metadata.target();
 
@@ -126,7 +126,7 @@ impl log::Log for AsyncLogger {
     fn flush(&self) {}
 }
 
-impl Drop for AsyncLogger {
+impl Drop for BioLogger {
     fn drop(&mut self) {
         self.worker.lock().expect("Could not lock worker").handle.take();
     }
@@ -139,12 +139,12 @@ impl Drop for AsyncLogger {
 pub fn init(crate_name: &str) {
     let level_filter: String = std::env::var("BIO_LOG").unwrap_or_default().to_lowercase();
     let level_filter: LevelFilter = match level_filter.as_str() {
-        "trace" => LevelFilter::Trace,
-        "debug" => LevelFilter::Debug,
-        "info"  => LevelFilter::Info,
-        "warn"  => LevelFilter::Warn,
-        "error" => LevelFilter::Error,
-        "off"   => LevelFilter::Off,
+        "1" | "trace" | "all" => LevelFilter::Trace,
+        "2" | "debug" => LevelFilter::Debug,
+        "3" | "info" => LevelFilter::Info,
+        "4" | "warn" => LevelFilter::Warn,
+        "5" | "error" => LevelFilter::Error,
+        "0" | "off" | "disable" | "none" => LevelFilter::Off,
         _ => if cfg!(debug_assertions) {
             LevelFilter::Trace
         } else {
@@ -152,8 +152,9 @@ pub fn init(crate_name: &str) {
         }
     };
     
-    let mut logger = AsyncLogger::new();
+    let mut logger = BioLogger::new();
     logger.whitelist_module(&crate_name);   // Auto-whitelist the crate
+    logger.whitelist_module("rocket");  // rocket logs are decent
     log::set_boxed_logger(Box::new(logger)).expect("Failed to set boxed logger");
     log::set_max_level(level_filter);
 }
